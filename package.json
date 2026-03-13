@@ -1,0 +1,11 @@
+{
+  "name": "kingkunta-ecommerce",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal package.json to allow npm commands (no frontend deps yet)",
+  "scripts": {
+    "test": "echo \"No tests configured\" && exit 0"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
