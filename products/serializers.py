@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import serializers
 
 from .models import Category, Product, ProductGalleryImage, ProductVariant
@@ -6,11 +8,19 @@ from .models import Category, Product, ProductGalleryImage, ProductVariant
 class CategorySerializer(serializers.ModelSerializer):
     parent_id = serializers.PrimaryKeyRelatedField(source='parent', queryset=Category.objects.all(), allow_null=True, required=False)
     parent_name = serializers.CharField(source='parent.name', read_only=True)
+    product_count = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Category
-        fields = ['id', 'name', 'description', 'parent_id', 'parent_name', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        fields = ['id', 'name', 'description', 'parent_id', 'parent_name', 'product_count', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'product_count']
+
+    def get_product_count(self, obj):
+        # Prefer annotated value to avoid extra queries (list/detail views should annotate)
+        count = getattr(obj, 'product_count', None)
+        if count is not None:
+            return count
+        return obj.products.count()
 
     def validate(self, attrs):
         parent = attrs.get('parent')
@@ -91,6 +101,49 @@ class ProductSerializer(serializers.ModelSerializer):
             obj.gallery_images.all(), many=True, context=self.context
         )
         return [item['url'] for item in serializer.data if item.get('url')]
+
+    def _parse_json_field(self, value, default):
+        if value is None:
+            return default
+
+        target_type = type(default)
+        if isinstance(value, target_type):
+            return value
+
+        if isinstance(default, list) and isinstance(value, (list, tuple)):
+            return list(value)
+
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return default
+            try:
+                parsed = json.loads(stripped)
+            except (ValueError, TypeError):
+                if isinstance(default, list):
+                    return [value]
+                return default
+
+            if isinstance(parsed, target_type):
+                return parsed
+            if isinstance(default, list):
+                if isinstance(parsed, list):
+                    return parsed
+                if isinstance(parsed, str):
+                    return [parsed] if parsed.strip() else default
+                return [parsed]
+            return default
+
+        return default
+
+    def validate_features(self, value):
+        return self._parse_json_field(value, [])
+
+    def validate_tags(self, value):
+        return self._parse_json_field(value, [])
+
+    def validate_dimensions(self, value):
+        return self._parse_json_field(value, {})
 
     def create(self, validated_data):
         stock = validated_data.get('stock', 0)

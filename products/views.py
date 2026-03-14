@@ -1,3 +1,4 @@
+from django.db.models import Count
 from rest_framework import status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
@@ -48,6 +49,9 @@ class ProductDetailView(APIView):
     def get_object(self, pk):
         return Product.objects.select_related('category').prefetch_related('gallery_images', 'variants').filter(pk=pk).first()
 
+    def _serialize_product(self, product, request, **kwargs):
+        return ProductSerializer(product, context={'request': request}, **kwargs)
+
     def _append_gallery_images(self, product, files):
         next_sort = product.gallery_images.count()
         for offset, image in enumerate(files, start=1):
@@ -58,7 +62,7 @@ class ProductDetailView(APIView):
         product = self.get_object(pk)
         if not product:
             return Response({'error': 'Product not found'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(ProductSerializer(product, context={'request': request}).data)
+        return Response(self._serialize_product(product, request).data)
 
     @extend_schema(summary='Update product', request=ProductSerializer, responses={200: ProductSerializer}, tags=['Products'])
     def put(self, request, pk):
@@ -69,7 +73,7 @@ class ProductDetailView(APIView):
         payload.pop('gallery_images', None)
         image_file = request.FILES.get('image')
         gallery_files = request.FILES.getlist('gallery_images')
-        serializer = ProductSerializer(product, data=payload, partial=True, context={'request': request})
+        serializer = self._serialize_product(product, request, data=payload, partial=True)
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
         if image_file is not None:
@@ -77,7 +81,7 @@ class ProductDetailView(APIView):
             product.save(update_fields=['image', 'updated_at'])
         if gallery_files:
             self._append_gallery_images(product, gallery_files)
-        return Response(ProductSerializer(self.get_object(pk), context={'request': request}).data)
+        return Response(self._serialize_product(self.get_object(pk), request).data)
 
     @extend_schema(summary='Delete product', responses={204: None}, tags=['Products'])
     def delete(self, request, pk):
@@ -202,7 +206,15 @@ class CategoryListCreateView(APIView):
 
     @extend_schema(summary='List categories', responses={200: CategorySerializer(many=True)}, tags=['categories'])
     def get(self, request):
-        return Response(CategorySerializer(Category.objects.all(), many=True).data)
+        queryset = Category.objects.annotate(product_count=Count('products'))
+        has_products = request.query_params.get('has_products')
+        if has_products is not None:
+            has_products_lower = has_products.strip().lower()
+            if has_products_lower in ['true', '1', 'yes']:
+                queryset = queryset.filter(product_count__gt=0)
+            elif has_products_lower in ['false', '0', 'no']:
+                queryset = queryset.filter(product_count=0)
+        return Response(CategorySerializer(queryset, many=True).data)
 
     @extend_schema(summary='Create category', request=CategorySerializer, responses={201: CategorySerializer}, tags=['categories'])
     def post(self, request):
@@ -215,16 +227,19 @@ class CategoryListCreateView(APIView):
 class CategoryDetailView(APIView):
     permission_classes = [IsAuthenticatedOrReadOnly]
 
+    def get_object(self, pk):
+        return Category.objects.annotate(product_count=Count('products')).filter(pk=pk).first()
+
     @extend_schema(summary='Get category', responses={200: CategorySerializer}, tags=['categories'])
     def get(self, request, pk):
-        category = Category.objects.filter(pk=pk).first()
+        category = self.get_object(pk)
         if not category:
             return Response({'error': 'Category not found'}, status=status.HTTP_404_NOT_FOUND)
         return Response(CategorySerializer(category).data)
 
     @extend_schema(summary='Update category', request=CategorySerializer, responses={200: CategorySerializer}, tags=['categories'])
     def put(self, request, pk):
-        category = Category.objects.filter(pk=pk).first()
+        category = self.get_object(pk)
         if not category:
             return Response({'error': 'Category not found'}, status=status.HTTP_404_NOT_FOUND)
         serializer = CategorySerializer(category, data=request.data)
@@ -234,7 +249,7 @@ class CategoryDetailView(APIView):
 
     @extend_schema(summary='Partial update category', request=CategorySerializer, responses={200: CategorySerializer}, tags=['categories'])
     def patch(self, request, pk):
-        category = Category.objects.filter(pk=pk).first()
+        category = self.get_object(pk)
         if not category:
             return Response({'error': 'Category not found'}, status=status.HTTP_404_NOT_FOUND)
         serializer = CategorySerializer(category, data=request.data, partial=True)
@@ -244,8 +259,13 @@ class CategoryDetailView(APIView):
 
     @extend_schema(summary='Delete category', responses={204: None}, tags=['categories'])
     def delete(self, request, pk):
-        category = Category.objects.filter(pk=pk).first()
+        category = self.get_object(pk)
         if not category:
             return Response({'error': 'Category not found'}, status=status.HTTP_404_NOT_FOUND)
+        if getattr(category, 'product_count', 0) > 0:
+            return Response(
+                {'error': 'Cannot delete category when it has associated products.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         category.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)

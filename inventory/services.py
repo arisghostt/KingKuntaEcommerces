@@ -1,17 +1,20 @@
 """
 Inventory business logic services
 """
+from decimal import Decimal
+
 from django.db import transaction
 from .models import InventoryReception, Stock, InventoryTx
 from products.models import Product
 from parties.models import Supplier
-from core.models import Warehouse
+from core.models import Location, Warehouse
 
 
 class InventoryAdjustmentService:
     """Service class for handling inventory adjustments"""
     
     @staticmethod
+    @transaction.atomic
     def process_adjustment(user, reason, note, lines_data):
         """
         Process inventory adjustment
@@ -25,23 +28,74 @@ class InventoryAdjustmentService:
         Returns:
             dict: Result with inventory_tx_ids and count
         """
-        # TODO: Implement actual business logic
-        # This is a placeholder implementation
-        
         inventory_tx_ids = []
-        
+
         for line in lines_data:
-            # TODO: Validate stock availability
-            # TODO: Create inventory transaction
-            # TODO: Update stock records
-            
-            # Placeholder - generate fake UUID for now
-            import uuid
-            inventory_tx_ids.append(str(uuid.uuid4()))
-        
+            product = Product.objects.get(id=line['product_id'])
+            warehouse = Warehouse.objects.get(id=line['warehouse_id'])
+            location = None
+            if line.get('location_id'):
+                location = Location.objects.get(id=line['location_id'])
+            batch_code = line.get('batch_code') or ''
+            expires_on = line.get('expires_on')
+            qty_delta = Decimal(line['qty_delta'])
+
+            if qty_delta == 0:
+                continue
+
+            stock_qs = Stock.objects.select_for_update().filter(
+                product=product,
+                warehouse=warehouse,
+                location=location,
+                batch_code=batch_code,
+            )
+            stock = stock_qs.first()
+
+            if not stock:
+                if qty_delta < 0:
+                    raise ValueError(
+                        f"Cannot decrease stock for {product.sku} in {warehouse.code}; no existing record."
+                    )
+                stock = Stock.objects.create(
+                    product=product,
+                    warehouse=warehouse,
+                    location=location,
+                    batch_code=batch_code,
+                    expires_on=expires_on,
+                    quantity_available=Decimal('0'),
+                )
+
+            new_available = stock.quantity_available + qty_delta
+
+            if new_available < 0:
+                raise ValueError(
+                    f"Adjustment would reduce {product.sku} below zero in {warehouse.code}."
+                )
+
+            if new_available < stock.quantity_reserved:
+                raise ValueError(
+                    f"Adjustment would reduce {product.sku} below reserved quantity in {warehouse.code}."
+                )
+
+            stock.quantity_available = new_available
+            if expires_on is not None:
+                stock.expires_on = expires_on
+            stock.save()
+
+            inventory_tx = InventoryTx.objects.create(
+                stock=stock,
+                direction='ADJUST',
+                reason=reason,
+                quantity=abs(qty_delta),
+                reference_number='',
+                note=note or '',
+                user=user,
+            )
+            inventory_tx_ids.append(inventory_tx.id)
+
         return {
             'inventory_tx_ids': inventory_tx_ids,
-            'count': len(inventory_tx_ids)
+            'count': len(inventory_tx_ids),
         }
 
 

@@ -31,7 +31,46 @@ def _resolve_user_role(user):
     return 'user'
 
 
+def _get_user_permissions(user):
+    from users.models import Module, UserPermission
+
+    modules = Module.objects.filter(is_active=True, is_menu=True).order_by('display_order')
+    if user.is_superadmin:
+        return [
+            {
+                'module_id': m.id,
+                'module_name': m.module_name,
+                'module_url': m.module_url,
+                'is_menu': m.is_menu,
+                'is_active': m.is_active,
+                'display_order': m.display_order,
+                'is_view': True,
+                'is_add': True,
+                'is_edit': True,
+                'is_delete': True,
+            }
+            for m in modules
+        ]
+    user_perms = {p.module_id: p for p in UserPermission.objects.filter(user=user)}
+    return [
+        {
+            'module_id': m.id,
+            'module_name': m.module_name,
+            'module_url': m.module_url,
+            'is_menu': m.is_menu,
+            'is_active': m.is_active,
+            'display_order': m.display_order,
+            'is_view': user_perms[m.id].is_view if m.id in user_perms else False,
+            'is_add': user_perms[m.id].is_add if m.id in user_perms else False,
+            'is_edit': user_perms[m.id].is_edit if m.id in user_perms else False,
+            'is_delete': user_perms[m.id].is_delete if m.id in user_perms else False,
+        }
+        for m in modules
+    ]
+
+
 def _serialize_user_for_auth_response(user, request):
+    group = user.groups.order_by('id').first()
     return {
         'id': user.pk,
         'user_id': user.pk,
@@ -45,6 +84,9 @@ def _serialize_user_for_auth_response(user, request):
         'tenant_id': getattr(user, 'tenant_id', None),
         'tenant_name': getattr(getattr(user, 'tenant', None), 'name', None),
         'role': _resolve_user_role(user),
+        'role_id': group.id if group else None,
+        'is_superadmin': getattr(user, 'is_superadmin', False),
+        'permissions': _get_user_permissions(user),
     }
 
 

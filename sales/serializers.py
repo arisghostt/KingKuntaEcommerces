@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from .services import SalesOrderService, STATUS_TRANSITION_CHOICES
+
 
 class SalesOrderLineSerializer(serializers.Serializer):
     product_id = serializers.UUIDField()
@@ -23,12 +25,27 @@ class SalesOrderSerializer(serializers.Serializer):
         ('DELIVERED', 'Delivered'),
         ('CANCELLED', 'Cancelled')
     ], default='DRAFT', required=False)
+    stock_status = serializers.SerializerMethodField()
     subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     tax_amount = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     notes = serializers.CharField(required=False, allow_blank=True)
     lines = SalesOrderLineSerializer(many=True)
     created_at = serializers.DateTimeField(read_only=True)
+
+    def get_stock_status(self, obj):
+        try:
+            shortages = SalesOrderService.check_stock_availability(obj.id)
+        except ValueError:
+            return 'insufficient'
+
+        if not shortages:
+            return 'ok'
+
+        total_lines = obj.lines.count()
+        if total_lines and len(shortages) == total_lines:
+            return 'insufficient'
+        return 'partial'
 
 
 class InvoiceSerializer(serializers.Serializer):
@@ -50,3 +67,7 @@ class InvoiceSerializer(serializers.Serializer):
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2)
     paid_amount = serializers.DecimalField(max_digits=12, decimal_places=2, default=0)
     created_at = serializers.DateTimeField(read_only=True)
+
+
+class SalesOrderStatusUpdateSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=STATUS_TRANSITION_CHOICES)

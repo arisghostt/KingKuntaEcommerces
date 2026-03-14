@@ -4,7 +4,64 @@ from rest_framework import serializers
 
 from core.models import Tenant
 
-from .models import CustomUser, RoleProfile
+from .models import CustomUser, Module, RolePermission, RoleProfile, UserPermission
+
+
+def _build_permissions_for_user(user):
+    """Retourne la liste des modules actifs avec les flags de permission pour un utilisateur."""
+    modules = Module.objects.filter(is_active=True, is_menu=True).order_by('display_order')
+    if user.is_superadmin:
+        return [
+            {
+                'module_id': m.id,
+                'module_name': m.module_name,
+                'module_url': m.module_url,
+                'is_menu': m.is_menu,
+                'is_active': m.is_active,
+                'display_order': m.display_order,
+                'is_view': True,
+                'is_add': True,
+                'is_edit': True,
+                'is_delete': True,
+            }
+            for m in modules
+        ]
+    user_perms = {p.module_id: p for p in UserPermission.objects.filter(user=user)}
+    return [
+        {
+            'module_id': m.id,
+            'module_name': m.module_name,
+            'module_url': m.module_url,
+            'is_menu': m.is_menu,
+            'is_active': m.is_active,
+            'display_order': m.display_order,
+            'is_view': user_perms[m.id].is_view if m.id in user_perms else False,
+            'is_add': user_perms[m.id].is_add if m.id in user_perms else False,
+            'is_edit': user_perms[m.id].is_edit if m.id in user_perms else False,
+            'is_delete': user_perms[m.id].is_delete if m.id in user_perms else False,
+        }
+        for m in modules
+    ]
+
+
+def _propagate_role_to_users(group):
+    """Re-propage les RolePermission d'un rôle vers tous ses utilisateurs."""
+    role_perms = list(RolePermission.objects.filter(role=group).select_related('module'))
+    users = CustomUser.objects.filter(groups=group)
+    for user in users:
+        UserPermission.objects.filter(user=user).delete()
+        if role_perms:
+            UserPermission.objects.bulk_create([
+                UserPermission(
+                    user=user,
+                    module=rp.module,
+                    is_view=rp.is_view,
+                    is_add=rp.is_add,
+                    is_edit=rp.is_edit,
+                    is_delete=rp.is_delete,
+                )
+                for rp in role_perms
+            ])
 
 
 PERMISSION_CATALOG = [
@@ -249,6 +306,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
         if module_permissions is not serializers.empty:
             self._save_role_permissions(instance, module_permissions)
+            _propagate_role_to_users(instance)
 
         return instance
 
@@ -390,48 +448,4 @@ class CurrentUserSerializer(serializers.ModelSerializer):
         return obj.is_superadmin
 
     def get_permissions(self, obj):
-        from .models import Module, UserPermission
-
-        # Get all active menu modules ordered by display_order
-        modules = Module.objects.filter(
-            is_active=True, is_menu=True
-        ).order_by('display_order')
-
-        if obj.is_superadmin:
-            # Superadmin sees everything with full permissions
-            return [
-                {
-                    'module_id': m.id,
-                    'module_name': m.module_name,
-                    'module_url': m.module_url,
-                    'is_menu': m.is_menu,
-                    'is_active': m.is_active,
-                    'display_order': m.display_order,
-                    'is_view': True,
-                    'is_add': True,
-                    'is_edit': True,
-                    'is_delete': True
-                }
-                for m in modules
-            ]
-        else:
-            # Other users get only their assigned permissions
-            user_perms = {
-                p.module_id: p
-                for p in UserPermission.objects.filter(user=obj)
-            }
-            return [
-                {
-                    'module_id': m.id,
-                    'module_name': m.module_name,
-                    'module_url': m.module_url,
-                    'is_menu': m.is_menu,
-                    'is_active': m.is_active,
-                    'display_order': m.display_order,
-                    'is_view': user_perms.get(m.id).is_view if m.id in user_perms else False,
-                    'is_add': user_perms.get(m.id).is_add if m.id in user_perms else False,
-                    'is_edit': user_perms.get(m.id).is_edit if m.id in user_perms else False,
-                    'is_delete': user_perms.get(m.id).is_delete if m.id in user_perms else False,
-                }
-                for m in modules
-            ]
+        return _build_permissions_for_user(obj)

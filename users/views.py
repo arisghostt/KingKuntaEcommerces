@@ -6,7 +6,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import CustomUser
+from .models import CustomUser, Module
 from .permissions import IsSuperAdmin
 from .serializers import (
     CurrentUserSerializer,
@@ -14,6 +14,7 @@ from .serializers import (
     PermissionSerializer,
     RoleSerializer,
     UserSerializer,
+    _propagate_role_to_users,
 )
 
 
@@ -90,55 +91,58 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.save()
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['patch'], url_path='reset-password', permission_classes=[IsSuperAdmin])
+    def reset_password(self, request, pk=None):
+        """
+        PATCH /api/users/{id}/reset-password/
+        Body: { "new_password": "..." }
+        """
+        user = self.get_object()
+        new_password = request.data.get('new_password') or request.data.get('password')
+        if not new_password:
+            return Response({'error': 'new_password is required'}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+        return Response({'success': True}, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=['post'], url_path='assign-role', permission_classes=[IsSuperAdmin])
     def assign_role(self, request, pk=None):
         """
         Assign a role to a user and update their permissions.
-        
+
         POST /api/users/{id}/assign-role/
         Body: { "role_id": 2 }
         """
         from django.db import transaction
-        from .models import Module, UserPermission, RolePermission
+        from .models import RolePermission, UserPermission
 
         user = self.get_object()
         role_id = request.data.get('role_id')
 
         if not role_id:
-            return Response(
-                {'error': 'role_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({'error': 'role_id is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             role = Group.objects.get(id=role_id)
         except Group.DoesNotExist:
-            return Response(
-                {'error': 'Role not found'},
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({'error': 'Role not found'}, status=status.HTTP_404_NOT_FOUND)
 
         with transaction.atomic():
-            # Update user's groups
             user.groups.set([role])
-
-            # Clear old permissions
             UserPermission.objects.filter(user=user).delete()
-
-            # Propagate role's module permissions to user
             role_perms = RolePermission.objects.filter(role=role).select_related('module')
-            UserPermission.objects.bulk_create([
-                UserPermission(
-                    user=user,
-                    module=rp.module,
-                    is_view=rp.is_view,
-                    is_add=rp.is_add,
-                    is_edit=rp.is_edit,
-                    is_delete=rp.is_delete,
-                    domain_user=user.tenant is not None and user or None
-                )
-                for rp in role_perms
-            ])
+            if role_perms.exists():
+                UserPermission.objects.bulk_create([
+                    UserPermission(
+                        user=user,
+                        module=rp.module,
+                        is_view=rp.is_view,
+                        is_add=rp.is_add,
+                        is_edit=rp.is_edit,
+                        is_delete=rp.is_delete,
+                    )
+                    for rp in role_perms
+                ])
 
         serializer = UserSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -162,6 +166,30 @@ class RoleViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsSuperAdmin()]
         return [IsAuthenticated()]
+
+
+class ModuleViewSet(viewsets.ReadOnlyModelViewSet):
+    """GET /api/modules/ — liste tous les modules actifs."""
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        return Module.objects.filter(is_active=True).order_by('display_order')
+
+    def list(self, request, *args, **kwargs):
+        modules = self.get_queryset()
+        data = [
+            {
+                'module_id': m.id,
+                'module_name': m.module_name,
+                'module_url': m.module_url,
+                'is_menu': m.is_menu,
+                'is_active': m.is_active,
+                'display_order': m.display_order,
+            }
+            for m in modules
+        ]
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class PermissionViewSet(viewsets.ReadOnlyModelViewSet):

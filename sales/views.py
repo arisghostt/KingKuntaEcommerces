@@ -6,7 +6,9 @@ from rest_framework.views import APIView
 
 from users.permissions import IsSuperAdmin
 
-from .serializers import InvoiceSerializer, SalesOrderSerializer
+from .models import SalesOrder
+from .serializers import InvoiceSerializer, SalesOrderSerializer, SalesOrderStatusUpdateSerializer
+from .services import SalesOrderService
 
 
 class SalesOrderListCreateView(APIView):
@@ -28,7 +30,6 @@ class SalesOrderListCreateView(APIView):
     )
     def post(self, request):
         import uuid
-        from .services import SalesOrderService
 
         serializer = SalesOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -53,7 +54,6 @@ class SalesOrderDetailView(APIView):
 
     @extend_schema(summary='Update sales order', request=SalesOrderSerializer, responses={200: SalesOrderSerializer}, tags=['Sales'])
     def put(self, request, pk):
-        from .services import SalesOrderService
 
         new_status = request.data.get('status')
         if not new_status:
@@ -73,6 +73,31 @@ class SalesOrderDetailView(APIView):
             return Response({'error': 'Sales order not found'}, status=status.HTTP_404_NOT_FOUND)
         order.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class OrderStatusUpdateView(APIView):
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    @extend_schema(
+        summary='Change sales order status',
+        request=SalesOrderStatusUpdateSerializer,
+        responses={
+            200: SalesOrderSerializer,
+            400: {'description': 'Invalid transition or insufficient stock'},
+            404: {'description': 'Sales order not found'},
+        },
+        tags=['Sales'],
+    )
+    def patch(self, request, pk):
+        serializer = SalesOrderStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            order = SalesOrderService.update_order_status(pk, serializer.validated_data['status'], request.user)
+        except SalesOrder.DoesNotExist:
+            return Response({'error': 'Sales order not found'}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(SalesOrderSerializer(order).data)
 
 
 class InvoiceListCreateView(APIView):
