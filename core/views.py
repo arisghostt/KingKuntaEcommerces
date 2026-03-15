@@ -11,7 +11,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from users.permissions import IsSuperAdmin
+from users.permissions import IsSuperAdmin, IsSuperAdminOrHasModulePermission
 
 from .models import CartItem, Event, Notification
 from .serializers import (
@@ -74,7 +74,8 @@ class AuthStatusView(APIView):
 
 
 class EventListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/events'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(summary='List events', tags=['events'])
     def get(self, request):
@@ -121,7 +122,8 @@ class EventListCreateView(APIView):
 
 
 class EventDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/events'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     def get_object(self, pk):
         return Event.objects.filter(pk=pk, is_deleted=False).first()

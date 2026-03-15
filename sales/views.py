@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from users.permissions import IsSuperAdmin
+from users.permissions import IsSuperAdminOrHasModulePermission
 
 from .models import SalesOrder
 from .serializers import InvoiceSerializer, SalesOrderSerializer, SalesOrderStatusUpdateSerializer
@@ -12,7 +12,8 @@ from .services import SalesOrderService
 
 
 class SalesOrderListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/orders'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(summary='List sales orders', responses={200: SalesOrderSerializer(many=True)}, tags=['Sales'])
     def get(self, request):
@@ -41,7 +42,8 @@ class SalesOrderListCreateView(APIView):
 
 
 class SalesOrderDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/orders'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(summary='Get sales order', responses={200: SalesOrderSerializer}, tags=['Sales'])
     def get(self, request, pk):
@@ -76,7 +78,9 @@ class SalesOrderDetailView(APIView):
 
 
 class OrderStatusUpdateView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/orders'
+    required_action = 'is_edit'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(
         summary='Change sales order status',
@@ -101,7 +105,8 @@ class OrderStatusUpdateView(APIView):
 
 
 class InvoiceListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/invoices'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(summary='List invoices', responses={200: InvoiceSerializer(many=True)}, tags=['Sales'])
     def get(self, request):

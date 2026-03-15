@@ -2,6 +2,7 @@
 Django settings for KingKuntaEcommerce project.
 """
 import os
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -33,6 +34,7 @@ INSTALLED_APPS = [
 
     # Third party
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'drf_spectacular',
     'storages',          # ← NOUVEAU : django-storages pour R2
@@ -273,6 +275,11 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer', 'Token'),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
 }
 
 # ─────────────────────────────────────────────────────────

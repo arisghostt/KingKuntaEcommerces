@@ -1,4 +1,7 @@
+import logging
+
 from django.contrib.auth.models import Group, Permission
+from django.db import transaction
 from django.db.models import Count, Q
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -16,6 +19,8 @@ from .serializers import (
     UserSerializer,
     _propagate_role_to_users,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -166,6 +171,71 @@ class RoleViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsSuperAdmin()]
         return [IsAuthenticated()]
+
+    def _module_permissions_payload_present(self):
+        return bool(self.request.data.get('module_permissions'))
+
+    def _apply_permission_fallback_if_needed(self, group):
+        permissions_payload = self.request.data.get('permissions')
+        if not permissions_payload or self._module_permissions_payload_present():
+            return
+        if getattr(self.request, '_role_permissions_fallback_applied', False):
+            return
+
+        if isinstance(permissions_payload, str):
+            permissions_payload = [permissions_payload]
+
+        codenames = [str(code).strip() for code in permissions_payload if str(code).strip()]
+        if not codenames:
+            return
+
+        permission_objs = list(Permission.objects.filter(codename__in=codenames))
+        missing_codenames = set(codenames) - {perm.codename for perm in permission_objs}
+
+        with transaction.atomic():
+            group.permissions.set(permission_objs)
+
+        if missing_codenames:
+            logger.warning(
+                'RoleViewSet: permissions fallback missing codenames=%s for role=%s',
+                ','.join(sorted(missing_codenames)),
+                group.name,
+            )
+
+        setattr(self.request, '_role_permissions_fallback_applied', True)
+
+    def _maybe_propagate_role(self, instance):
+        if not self._module_permissions_payload_present():
+            return
+        if getattr(self.request, '_role_permissions_propagated', False):
+            return
+        with transaction.atomic():
+            _propagate_role_to_users(instance)
+        setattr(self.request, '_role_permissions_propagated', True)
+
+    def create(self, request, *args, **kwargs):
+        response = super().create(request, *args, **kwargs)
+        group_id = response.data.get('id')
+        if group_id:
+            group = Group.objects.filter(id=group_id).first()
+            if group:
+                self._apply_permission_fallback_if_needed(group)
+                self._maybe_propagate_role(group)
+        return response
+
+    def update(self, request, *args, **kwargs):
+        response = super().update(request, *args, **kwargs)
+        instance = self.get_object()
+        self._apply_permission_fallback_if_needed(instance)
+        self._maybe_propagate_role(instance)
+        return response
+
+    def partial_update(self, request, *args, **kwargs):
+        response = super().partial_update(request, *args, **kwargs)
+        instance = self.get_object()
+        self._apply_permission_fallback_if_needed(instance)
+        self._maybe_propagate_role(instance)
+        return response
 
 
 class ModuleViewSet(viewsets.ReadOnlyModelViewSet):

@@ -1,0 +1,132 @@
+MODULE_CATALOG = [
+    {
+        'module_name': 'Dashboard',
+        'module_url': '/dashboard',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 1,
+    },
+    {
+        'module_name': 'Products',
+        'module_url': '/products',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 2,
+    },
+    {
+        'module_name': 'Orders',
+        'module_url': '/orders',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 3,
+    },
+    {
+        'module_name': 'Customers',
+        'module_url': '/customers',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 4,
+    },
+    {
+        'module_name': 'Suppliers',
+        'module_url': '/suppliers',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 5,
+    },
+    {
+        'module_name': 'Users',
+        'module_url': '/users',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 6,
+    },
+    {
+        'module_name': 'Billing',
+        'module_url': '/billing',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 7,
+    },
+    {
+        'module_name': 'Inventory',
+        'module_url': '/inventory',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 8,
+    },
+    {
+        'module_name': 'Analytics',
+        'module_url': '/analytics',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 9,
+    },
+    {
+        'module_name': 'Promotions',
+        'module_url': '/promotions',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 10,
+    },
+    {
+        'module_name': 'Payments',
+        'module_url': '/payments',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 11,
+    },
+    {
+        'module_name': 'Invoices',
+        'module_url': '/invoices',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 12,
+    },
+    {
+        'module_name': 'Chat',
+        'module_url': '/chat',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 13,
+    },
+    {
+        'module_name': 'Email',
+        'module_url': '/email',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 14,
+    },
+    {
+        'module_name': 'Events',
+        'module_url': '/events',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 15,
+    },
+    {
+        'module_name': 'Settings',
+        'module_url': '/settings',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 16,
+    },
+    {
+        'module_name': 'Settings / Users',
+        'module_url': '/settings/users',
+        'is_menu': True,
+        'is_active': True,
+        'display_order': 17,
+        'parent_url': '/settings',
+    },
+]
+
+
+def prepare_module_entry(module_config):
+    defaults = {
+        'module_name': module_config['module_name'],
+        'is_menu': module_config.get('is_menu', True),
+        'is_active': module_config.get('is_active', True),
+        'display_order': module_config['display_order'],
+    }
+    return module_config['module_url'], defaults, module_config.get('parent_url')

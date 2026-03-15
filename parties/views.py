@@ -4,13 +4,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from users.permissions import IsSuperAdmin
+from users.permissions import IsSuperAdminOrHasModulePermission
 
 from .serializers import CustomerSerializer, SupplierSerializer
 
 
 class CustomerListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/customers'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(summary='List customers', responses={200: CustomerSerializer(many=True)}, tags=['Parties'])
     def get(self, request):
@@ -36,7 +37,8 @@ class CustomerListCreateView(APIView):
 
 
 class CustomerDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/customers'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(summary='Get customer', responses={200: CustomerSerializer}, tags=['Parties'])
     def get(self, request, pk):
@@ -73,7 +75,8 @@ class CustomerDetailView(APIView):
 
 
 class SupplierListCreateView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/suppliers'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(summary='List suppliers', responses={200: SupplierSerializer(many=True)}, tags=['Parties'])
     def get(self, request):
@@ -93,7 +96,8 @@ class SupplierListCreateView(APIView):
 
 
 class SupplierDetailView(APIView):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/suppliers'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
 
     @extend_schema(summary='Get supplier', responses={200: SupplierSerializer}, tags=['Parties'])
     def get(self, request, pk):

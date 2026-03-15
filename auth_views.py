@@ -69,8 +69,61 @@ def _get_user_permissions(user):
     ]
 
 
+def _get_role_permissions(group, is_superadmin):
+    if is_superadmin:
+        from users.models import Module
+
+        modules = Module.objects.filter(is_active=True).order_by('display_order')
+        return [
+            {
+                'module_id': m.id,
+                'module_name': m.module_name,
+                'module_url': m.module_url,
+                'is_view': True,
+                'is_add': True,
+                'is_edit': True,
+                'is_delete': True,
+            }
+            for m in modules
+        ]
+
+    if not group:
+        return []
+
+    from users.models import RolePermission
+
+    role_perms = (
+        RolePermission.objects.filter(role=group)
+        .select_related('module')
+        .order_by('module__display_order')
+    )
+    return [
+        {
+            'module_id': rp.module_id,
+            'module_name': rp.module.module_name,
+            'module_url': rp.module.module_url,
+            'is_view': rp.is_view,
+            'is_add': rp.is_add,
+            'is_edit': rp.is_edit,
+            'is_delete': rp.is_delete,
+        }
+        for rp in role_perms
+    ]
+
+
+def _build_role_payload(user, group):
+    is_superadmin = getattr(user, 'is_superadmin', False)
+    role_id = group.id if group else 0
+    return {
+        'id': role_id or 0,
+        'name': _resolve_user_role(user),
+        'permissions': _get_role_permissions(group, is_superadmin),
+    }
+
+
 def _serialize_user_for_auth_response(user, request):
     group = user.groups.order_by('id').first()
+    role_payload = _build_role_payload(user, group)
     return {
         'id': user.pk,
         'user_id': user.pk,
@@ -83,8 +136,8 @@ def _serialize_user_for_auth_response(user, request):
         'bio': getattr(user, 'bio', ''),
         'tenant_id': getattr(user, 'tenant_id', None),
         'tenant_name': getattr(getattr(user, 'tenant', None), 'name', None),
-        'role': _resolve_user_role(user),
         'role_id': group.id if group else None,
+        'role': role_payload,
         'is_superadmin': getattr(user, 'is_superadmin', False),
         'permissions': _get_user_permissions(user),
     }
@@ -113,13 +166,16 @@ class SafeTokenObtainPairView(TokenObtainPairView):
 
             serializer = self.get_serializer(data=payload)
             serializer.is_valid(raise_exception=True)
-            response_payload = dict(serializer.validated_data)
+            access_token = serializer.validated_data.get('access')
+            refresh_token = serializer.validated_data.get('refresh')
+            response_payload = {}
+            if access_token:
+                response_payload['access'] = str(access_token)
+            if refresh_token:
+                response_payload['refresh'] = str(refresh_token)
             if getattr(serializer, 'user', None) is not None:
                 response_payload['user'] = _serialize_user_for_auth_response(serializer.user, request)
             response = Response(response_payload, status=status.HTTP_200_OK)
-
-            access_token = serializer.validated_data.get('access')
-            refresh_token = serializer.validated_data.get('refresh')
             secure_cookie = not settings.DEBUG
 
             if access_token:

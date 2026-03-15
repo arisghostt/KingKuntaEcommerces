@@ -1,3 +1,5 @@
+import logging
+
 from django.contrib.auth.models import Group, Permission
 from django.db import transaction
 from rest_framework import serializers
@@ -5,6 +7,8 @@ from rest_framework import serializers
 from core.models import Tenant
 
 from .models import CustomUser, Module, RolePermission, RoleProfile, UserPermission
+
+logger = logging.getLogger(__name__)
 
 
 def _build_permissions_for_user(user):
@@ -186,6 +190,12 @@ class RoleSerializer(serializers.ModelSerializer):
         required=False,
         allow_empty=True,
     )
+    permissions = serializers.ListField(
+        child=serializers.CharField(),
+        write_only=True,
+        required=False,
+        allow_empty=True,
+    )
     description = serializers.CharField(write_only=True, required=False, allow_blank=True)
     color = serializers.CharField(write_only=True, required=False, max_length=30)
     userCount = serializers.SerializerMethodField(read_only=True)
@@ -194,13 +204,14 @@ class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Group
         fields = [
-            'id',
-            'name',
-            'description',
-            'module_permissions',
-            'userCount',
-            'color',
-            'module_permissions_read',
+        'id',
+        'name',
+        'description',
+        'module_permissions',
+        'permissions',
+        'userCount',
+        'color',
+        'module_permissions_read',
         ]
         read_only_fields = ['id', 'userCount', 'module_permissions_read']
 
@@ -246,6 +257,13 @@ class RoleSerializer(serializers.ModelSerializer):
         # Collect module IDs for validation
         module_ids = [mp['module_id'] for mp in module_permissions]
         modules = {m.id: m for m in Module.objects.filter(id__in=module_ids)}
+        missing_module_ids = set(module_ids) - set(modules.keys())
+        for missing_module_id in sorted(missing_module_ids):
+            logger.warning(
+                "RolePermission: module_id=%s introuvable pour rôle %s",
+                missing_module_id,
+                group.name,
+            )
         
         # Create new permissions
         perms_to_create = []
@@ -273,6 +291,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        validated_data.pop('permissions', [])
         module_permissions = validated_data.pop('module_permissions', [])
         description = validated_data.pop('description', '')
         color = validated_data.pop('color', RoleProfile._meta.get_field('color').default)
@@ -285,6 +304,7 @@ class RoleSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        validated_data.pop('permissions', serializers.empty)
         module_permissions = validated_data.pop('module_permissions', serializers.empty)
         description = validated_data.pop('description', serializers.empty)
         color = validated_data.pop('color', serializers.empty)
@@ -307,6 +327,9 @@ class RoleSerializer(serializers.ModelSerializer):
         if module_permissions is not serializers.empty:
             self._save_role_permissions(instance, module_permissions)
             _propagate_role_to_users(instance)
+            request = self.context.get('request')
+            if request:
+                setattr(request, '_role_permissions_propagated', True)
 
         return instance
 

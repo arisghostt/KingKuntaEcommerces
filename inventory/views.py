@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from products.models import Product
-from users.permissions import IsSuperAdmin
+from users.permissions import IsSuperAdmin, IsSuperAdminOrHasModulePermission
 
 from .models import StockMovement
 from .serializers import (
@@ -158,6 +158,7 @@ class InventoryStockDetailView(APIView):
             }
         )
 
+
 class AdminInventoryPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
@@ -165,8 +166,11 @@ class AdminInventoryPagination(PageNumberPagination):
 
 
 class AdminInventoryViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated, IsSuperAdmin]
+    module_url = '/inventory'
     pagination_class = AdminInventoryPagination
+
+    def get_permissions(self):
+        return [IsAuthenticated(), IsSuperAdminOrHasModulePermission()]
 
     def _paginate(self, request, items):
         paginator = self.pagination_class()
