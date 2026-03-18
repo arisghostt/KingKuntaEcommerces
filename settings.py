@@ -96,15 +96,41 @@ WSGI_APPLICATION = 'wsgi.application'
 # ─────────────────────────────────────────────────────────
 # BASE DE DONNÉES — Neon PostgreSQL
 # ─────────────────────────────────────────────────────────
-database_url = os.getenv('DATABASE_URL')
-if not database_url:
-    raise RuntimeError(
-        'DATABASE_URL est requis et doit pointer vers la base Neon PostgreSQL.'
-    )
+db_name = (os.getenv('DB_NAME') or '').strip()
+db_user = (os.getenv('DB_USER') or '').strip()
+db_password = (os.getenv('DB_PASSWORD') or '').strip()
+db_host = (os.getenv('DB_HOST') or '').strip()
+db_port = (os.getenv('DB_PORT') or '').strip()
+database_url = (os.getenv('DATABASE_URL') or '').strip()
 
-DATABASES = {
-    'default': dj_database_url.parse(database_url)
-}
+if all([db_name, db_user, db_password, db_host]):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': db_name,
+            'USER': db_user,
+            'PASSWORD': db_password,
+            'HOST': db_host,
+            'PORT': db_port or '5432',
+        }
+    }
+
+    # Neon needs SSL; keep it configurable for non-Neon environments.
+    db_sslmode = (os.getenv('DB_SSLMODE') or '').strip() or ('require' if 'neon.tech' in db_host else '')
+    db_channel_binding = (os.getenv('DB_CHANNEL_BINDING') or '').strip()
+    if db_sslmode or db_channel_binding:
+        DATABASES['default'].setdefault('OPTIONS', {})
+        if db_sslmode:
+            DATABASES['default']['OPTIONS']['sslmode'] = db_sslmode
+        if db_channel_binding:
+            DATABASES['default']['OPTIONS']['channel_binding'] = db_channel_binding
+elif database_url:
+    DATABASES = {'default': dj_database_url.parse(database_url)}
+else:
+    raise RuntimeError(
+        "Configuration DB manquante: définissez DB_NAME/DB_USER/DB_PASSWORD/DB_HOST(/DB_PORT) "
+        "ou DATABASE_URL."
+    )
 
 # Optimisation connexion Neon (serverless PostgreSQL)
 default_conn_max_age = '0' if DEBUG else '600'

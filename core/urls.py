@@ -7,6 +7,7 @@ from .views import (
     CartItemDetailView,
     CartView,
     CustomAuthToken,
+    DashboardStatsView,
     EventDetailView,
     EventListCreateView,
     NotificationDeleteView,
@@ -28,4 +29,5 @@ urlpatterns = [
     path('cart/items/', CartItemCreateView.as_view(), name='cart-item-create'),
     path('cart/items/<uuid:pk>/', CartItemDetailView.as_view(), name='cart-item-detail'),
     path('warehouses/', WarehouseListCreateView.as_view(), name='warehouse-list-create'),
+    path('api/dashboard/stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
 ]

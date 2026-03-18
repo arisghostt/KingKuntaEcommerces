@@ -15,7 +15,7 @@ from auth_views import (
     SafeTokenObtainPairView,
     SafeTokenRefreshView,
 )
-from core.views import AdminNotificationListView
+from core.views import AdminDashboardStatsView, AdminNotificationListView
 
 
 urlpatterns = [
@@ -35,6 +35,7 @@ urlpatterns = [
     path('api/auth/password-reset/', PasswordResetView.as_view(), name='auth-password-reset'),
     path('api/auth/password-reset-confirm/', PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
     path('api/admin/notifications/', AdminNotificationListView.as_view(), name='admin-notifications-list'),
+    path('api/admin/dashboard/stats/', AdminDashboardStatsView.as_view(), name='dashboard-stats'),
     path('api/admin/', include('reviews.admin_urls')),
     path('api/admin/', include('promotions.admin_urls')),
     path('api/admin/', include('parties.admin_urls')),

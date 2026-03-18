@@ -196,7 +196,8 @@ class AdminInventoryViewSet(viewsets.ViewSet):
     @extend_schema(summary='Inventory dashboard stats', tags=['admin'])
     def stats(self, request):
         products = Product.objects.all()
-        last_30_days = timezone.now() - timedelta(days=30)
+        now = timezone.now()
+        last_30_days = now - timedelta(days=30)
         stock_in_month = (
             StockMovement.objects.filter(type='in', date__gte=last_30_days)
             .aggregate(total=models.Sum('quantity'))
@@ -211,6 +212,33 @@ class AdminInventoryViewSet(viewsets.ViewSet):
         )
         low_stock_count = products.filter(current_stock__gt=0, current_stock__lte=models.F('min_stock')).count()
         out_of_stock_count = products.filter(current_stock__lte=0).count()
+        prev_30_days_start = now - timedelta(days=60)
+        stock_in_prev = (
+            StockMovement.objects.filter(type='in', date__gte=prev_30_days_start, date__lt=last_30_days)
+            .aggregate(total=models.Sum('quantity'))
+            .get('total')
+            or 0
+        )
+        stock_out_prev = (
+            StockMovement.objects.filter(type='out', date__gte=prev_30_days_start, date__lt=last_30_days)
+            .aggregate(total=models.Sum('quantity'))
+            .get('total')
+            or 0
+        )
+        products_this_month = Product.objects.filter(created_at__gte=last_30_days).count()
+        products_prev_month = Product.objects.filter(
+            created_at__gte=prev_30_days_start, created_at__lt=last_30_days
+        ).count()
+        low_stock_prev = products.filter(
+            current_stock__gt=0,
+            current_stock__lte=models.F('min_stock'),
+            updated_at__gte=prev_30_days_start,
+            updated_at__lt=last_30_days,
+        ).count()
+        total_products_change = products_this_month - products_prev_month
+        stock_in_change = stock_in_month - stock_in_prev
+        stock_out_change = stock_out_month - stock_out_prev
+        low_stock_change = low_stock_count - low_stock_prev
 
         return Response(
             {
@@ -219,6 +247,10 @@ class AdminInventoryViewSet(viewsets.ViewSet):
                 'stock_out_month': stock_out_month,
                 'low_stock_count': low_stock_count,
                 'out_of_stock_count': out_of_stock_count,
+                'total_products_change': total_products_change,
+                'stock_in_change': stock_in_change,
+                'stock_out_change': stock_out_change,
+                'low_stock_change': low_stock_change,
             }
         )
 

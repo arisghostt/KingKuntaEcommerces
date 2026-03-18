@@ -67,6 +67,25 @@ def _propagate_role_to_users(group):
                 for rp in role_perms
             ])
 
+    AUTO_ACCESS_MODULES = ['/events', '/chat', '/email', '/settings']
+    auto_modules = list(Module.objects.filter(module_url__in=AUTO_ACCESS_MODULES, is_active=True))
+    if auto_modules:
+        for user in users:
+            covered = {rp.module.module_url for rp in role_perms}
+            missing_auto_modules = [m for m in auto_modules if m.module_url not in covered]
+            if missing_auto_modules:
+                UserPermission.objects.bulk_create([
+                    UserPermission(
+                        user=user,
+                        module=m,
+                        is_view=True,
+                        is_add=False,
+                        is_edit=False,
+                        is_delete=False,
+                    )
+                    for m in missing_auto_modules
+                ], ignore_conflicts=True)
+
 
 PERMISSION_CATALOG = [
     {
@@ -247,10 +266,7 @@ class RoleSerializer(serializers.ModelSerializer):
     def _save_role_permissions(self, group, module_permissions):
         """Save module permissions for a role, replacing existing ones."""
         from .models import Module, RolePermission
-        
-        if not module_permissions:
-            return
-        
+
         # Delete existing permissions
         RolePermission.objects.filter(role=group).delete()
         
@@ -282,6 +298,23 @@ class RoleSerializer(serializers.ModelSerializer):
                 )
         
         RolePermission.objects.bulk_create(perms_to_create)
+
+        AUTO_ACCESS_MODULES = ['/events', '/chat', '/email', '/settings']
+        auto_modules = list(Module.objects.filter(module_url__in=AUTO_ACCESS_MODULES, is_active=True))
+        received_module_ids = set(module_ids)
+        auto_missing_modules = [m for m in auto_modules if m.id not in received_module_ids]
+        if auto_missing_modules:
+            RolePermission.objects.bulk_create([
+                RolePermission(
+                    role=group,
+                    module=m,
+                    is_view=True,
+                    is_add=False,
+                    is_edit=False,
+                    is_delete=False,
+                )
+                for m in auto_missing_modules
+            ], ignore_conflicts=True)
 
     def _save_profile(self, group, description, color):
         profile, _ = RoleProfile.objects.get_or_create(group=group)

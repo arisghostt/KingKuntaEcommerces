@@ -4,7 +4,7 @@ from django.contrib.auth.models import Group, Permission
 from django.db import transaction
 from django.db.models import Count, Q
 from rest_framework import status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -149,6 +149,26 @@ class UserViewSet(viewsets.ModelViewSet):
                     for rp in role_perms
                 ])
 
+            AUTO_ACCESS_MODULES = ['/events', '/chat', '/email', '/settings']
+            auto_modules = list(Module.objects.filter(module_url__in=AUTO_ACCESS_MODULES, is_active=True))
+            if auto_modules:
+                covered = set(
+                    UserPermission.objects.filter(user=user).values_list('module__module_url', flat=True)
+                )
+                missing_auto_modules = [m for m in auto_modules if m.module_url not in covered]
+                if missing_auto_modules:
+                    UserPermission.objects.bulk_create([
+                        UserPermission(
+                            user=user,
+                            module=m,
+                            is_view=True,
+                            is_add=False,
+                            is_edit=False,
+                            is_delete=False,
+                        )
+                        for m in missing_auto_modules
+                    ], ignore_conflicts=True)
+
         serializer = UserSerializer(user)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -272,6 +292,7 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(PERMISSION_CATALOG, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+
     def retrieve(self, request, *args, **kwargs):
         codename = kwargs.get('pk')
         for item in PERMISSION_CATALOG:
@@ -279,3 +300,32 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
                 serializer = self.get_serializer(item)
                 return Response(serializer.data, status=status.HTTP_200_OK)
         raise NotFound(detail='Permission not found.')
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def me(request):
+    user = request.user
+    module_permissions = user.module_permissions.select_related('module')
+    permissions_payload = [
+        {
+            'module_url': perm.module.module_url,
+            'module_name': perm.module.module_name,
+            'is_view': perm.is_view,
+            'is_add': perm.is_add,
+            'is_edit': perm.is_edit,
+            'is_delete': perm.is_delete,
+        }
+        for perm in module_permissions
+    ]
+
+    return Response(
+        {
+            'id': user.id,
+            'email': user.email,
+            'username': user.username,
+            'is_superadmin': user.is_superuser,
+            'permissions': permissions_payload,
+        },
+        status=status.HTTP_200_OK,
+    )

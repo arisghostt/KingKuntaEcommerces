@@ -1,4 +1,7 @@
+from datetime import timedelta
+
 from django.core.paginator import Paginator
+from django.db import models
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
@@ -23,6 +26,21 @@ from .serializers import (
     NotificationSerializer,
     WarehouseSerializer,
 )
+
+try:
+    from sales.models import SalesOrder
+except ImportError:  # pragma: no cover - optional dependency
+    SalesOrder = None
+
+try:
+    from parties.models import Customer
+except ImportError:  # pragma: no cover - optional dependency
+    Customer = None
+
+try:
+    from returns_app.models import ReturnRequest
+except ImportError:  # pragma: no cover - optional dependency
+    ReturnRequest = None
 
 
 class AuthRootView(APIView):
@@ -317,3 +335,191 @@ class WarehouseListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         warehouse = Warehouse.objects.create(**serializer.validated_data)
         return Response(WarehouseSerializer(warehouse).data, status=status.HTTP_201_CREATED)
+
+
+class DashboardStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(summary='Dashboard stats', tags=['Core'])
+    def get(self, request):
+        now = timezone.now()
+        last_30 = now - timedelta(days=30)
+        prev_30_start = now - timedelta(days=60)
+
+        def safe_sum(queryset, field_name):
+            try:
+                return queryset.aggregate(total=models.Sum(field_name)).get('total') or 0
+            except Exception:
+                return 0
+
+        def safe_count(queryset):
+            try:
+                return queryset.count()
+            except Exception:
+                return 0
+
+        def percent_change(current, previous):
+            try:
+                prev_val = float(previous)
+                if prev_val:
+                    return (float(current) - prev_val) / prev_val * 100
+            except Exception:
+                pass
+            return 0.0
+
+        total_revenue = total_revenue_prev = 0
+        total_orders = total_orders_prev = 0
+        total_customers = total_customers_prev = 0
+        total_refunds = total_refunds_prev = 0
+
+        confirmed_statuses = ['CONFIRMED', 'SHIPPED', 'DELIVERED']
+        refund_statuses = ['CANCELLED', 'REFUNDED']
+
+        if SalesOrder:
+            try:
+                total_revenue = safe_sum(
+                    SalesOrder.objects.filter(status__in=confirmed_statuses, created_at__gte=last_30),
+                    'total_amount',
+                )
+                total_revenue_prev = safe_sum(
+                    SalesOrder.objects.filter(
+                        status__in=confirmed_statuses,
+                        created_at__gte=prev_30_start,
+                        created_at__lt=last_30,
+                    ),
+                    'total_amount',
+                )
+                total_orders = safe_count(SalesOrder.objects.filter(created_at__gte=last_30))
+                total_orders_prev = safe_count(
+                    SalesOrder.objects.filter(created_at__gte=prev_30_start, created_at__lt=last_30)
+                )
+                total_refunds = safe_count(
+                    SalesOrder.objects.filter(status__in=refund_statuses, created_at__gte=last_30)
+                )
+                total_refunds_prev = safe_count(
+                    SalesOrder.objects.filter(
+                        status__in=refund_statuses,
+                        created_at__gte=prev_30_start,
+                        created_at__lt=last_30,
+                    )
+                )
+            except Exception:
+                total_revenue = total_revenue_prev = 0
+                total_orders = total_orders_prev = 0
+                total_refunds = total_refunds_prev = 0
+
+        if Customer:
+            try:
+                total_customers = safe_count(Customer.objects.filter(created_at__gte=last_30))
+                total_customers_prev = safe_count(
+                    Customer.objects.filter(created_at__gte=prev_30_start, created_at__lt=last_30)
+                )
+            except Exception:
+                total_customers = total_customers_prev = 0
+
+        total_revenue_change = percent_change(total_revenue, total_revenue_prev)
+        total_orders_change = percent_change(total_orders, total_orders_prev)
+        total_customers_change = percent_change(total_customers, total_customers_prev)
+        total_refunds_change = percent_change(total_refunds, total_refunds_prev)
+
+        return Response(
+            {
+                'total_revenue': float(total_revenue),
+                'total_revenue_change': total_revenue_change,
+                'total_orders': total_orders,
+                'total_orders_change': total_orders_change,
+                'total_customers': total_customers,
+                'total_customers_change': total_customers_change,
+                'total_refunds': total_refunds,
+                'total_refunds_change': total_refunds_change,
+            }
+        )
+
+
+class AdminDashboardStatsView(APIView):
+    module_url = '/dashboard'
+    permission_classes = [IsAuthenticated, IsSuperAdminOrHasModulePermission]
+
+    @extend_schema(summary='Admin dashboard stats', tags=['admin'])
+    def get(self, request):
+        now = timezone.now()
+        last_30 = now - timedelta(days=30)
+        prev_30_start = now - timedelta(days=60)
+
+        def safe_sum(queryset, field_name):
+            try:
+                return queryset.aggregate(total=models.Sum(field_name)).get('total') or 0
+            except Exception:
+                return 0
+
+        def safe_count(queryset):
+            try:
+                return queryset.count()
+            except Exception:
+                return 0
+
+        total_revenue = total_revenue_prev = 0
+        orders_count = orders_prev = 0
+        customers_count = 0
+        new_customers = new_customers_prev = 0
+        refunds_count = refunds_prev = 0
+        refunds_amount = 0
+
+        if SalesOrder:
+            try:
+                total_revenue = safe_sum(
+                    SalesOrder.objects.filter(created_at__gte=last_30).exclude(status='CANCELLED'),
+                    'total_amount',
+                )
+                total_revenue_prev = safe_sum(
+                    SalesOrder.objects.filter(created_at__gte=prev_30_start, created_at__lt=last_30).exclude(
+                        status='CANCELLED'
+                    ),
+                    'total_amount',
+                )
+                orders_count = safe_count(SalesOrder.objects.filter(created_at__gte=last_30))
+                orders_prev = safe_count(
+                    SalesOrder.objects.filter(created_at__gte=prev_30_start, created_at__lt=last_30)
+                )
+            except Exception:
+                total_revenue = total_revenue_prev = 0
+                orders_count = orders_prev = 0
+
+        if Customer:
+            try:
+                customers_count = safe_count(Customer.objects.filter(is_active=True, is_deleted=False))
+                new_customers = safe_count(Customer.objects.filter(created_at__gte=last_30))
+                new_customers_prev = safe_count(
+                    Customer.objects.filter(created_at__gte=prev_30_start, created_at__lt=last_30)
+                )
+            except Exception:
+                customers_count = new_customers = new_customers_prev = 0
+
+        if ReturnRequest:
+            try:
+                refunds_queryset = ReturnRequest.objects.filter(status='refunded', created_at__gte=last_30)
+                refunds_count = safe_count(refunds_queryset)
+                refunds_amount = safe_sum(refunds_queryset, 'refund_amount')
+                refunds_prev = safe_count(
+                    ReturnRequest.objects.filter(
+                        status='refunded',
+                        created_at__gte=prev_30_start,
+                        created_at__lt=last_30,
+                    )
+                )
+            except Exception:
+                refunds_count = refunds_prev = refunds_amount = 0
+
+        return Response(
+            {
+                'total_revenue': float(total_revenue),
+                'total_revenue_change': float(total_revenue - total_revenue_prev),
+                'orders_count': orders_count,
+                'orders_change': orders_count - orders_prev,
+                'customers_count': customers_count,
+                'customers_change': new_customers - new_customers_prev,
+                'refunds_count': refunds_count,
+                'refunds_amount': float(refunds_amount),
+                'refunds_change': refunds_count - refunds_prev,
+            }
+        )
