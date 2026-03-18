@@ -1,34 +1,43 @@
 from django.core.management.base import BaseCommand
-from django.db import transaction
-
-from inventory.models import StockMovement
+from django.utils import timezone
 from products.models import Product
+from inventory.models import StockMovement
 
 
 class Command(BaseCommand):
-    help = 'Create missing initial StockMovement entries for products with stock but no movement history'
+    help = 'Crée les StockMovements initiaux pour les produits sans historique'
 
     def handle(self, *args, **options):
-        created_count = 0
+        created = 0
+        skipped = 0
 
-        with transaction.atomic():
-            for product in Product.objects.all().only('id', 'current_stock'):
-                if StockMovement.objects.filter(product_id=product.id).exists():
-                    continue
+        for product in Product.objects.all():
+            already_has_movements = StockMovement.objects.filter(product=product).exists()
+            if already_has_movements:
+                skipped += 1
+                self.stdout.write(f'  SKIP: {product.name} (has existing movements)')
+                continue
 
-                current_stock = int(product.current_stock or 0)
-                if current_stock <= 0:
-                    continue
+            stock_qty = int(product.current_stock or product.stock or 0)
+            if stock_qty <= 0:
+                skipped += 1
+                self.stdout.write(f'  SKIP: {product.name} (stock = 0)')
+                continue
 
-                StockMovement.objects.create(
-                    product_id=product.id,
-                    type='in',
-                    quantity=current_stock,
-                    reason='Initial stock',
-                    current_stock_after=current_stock,
-                    created_by=None,
-                )
-                created_count += 1
+            StockMovement.objects.create(
+                product=product,
+                type='in',
+                quantity=stock_qty,
+                reason='Initial stock',
+                current_stock_after=stock_qty,
+                created_by=None,
+            )
+            created += 1
+            self.stdout.write(
+                self.style.SUCCESS(f'  OK: {product.name} → {stock_qty} units')
+            )
 
-        self.stdout.write(self.style.SUCCESS(f'Created {created_count} initial stock movement(s).'))
-
+        self.stdout.write('')
+        self.stdout.write(self.style.SUCCESS(
+            f'Done: {created} movements created, {skipped} products skipped.'
+        ))

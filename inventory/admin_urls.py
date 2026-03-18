@@ -12,10 +12,8 @@ admin_inventory_export = AdminInventoryViewSet.as_view({'get': 'export'})
 urlpatterns = [
     path('inventory/stats/', admin_inventory_stats, name='admin-inventory-stats'),
     path('inventory/movements/', admin_inventory_movements, name='admin-inventory-movements'),
-    path('inventory/movements', admin_inventory_movements, name='admin-inventory-movements-noslash'),
     path('inventory/alerts/', admin_inventory_alerts, name='admin-inventory-alerts'),
     path('inventory/alerts/<uuid:product_id>/restock/', admin_inventory_restock, name='admin-inventory-restock'),
-    path('inventory/alerts/<uuid:product_id>/restock', admin_inventory_restock, name='admin-inventory-restock-noslash'),
     path('inventory/analytics/', admin_inventory_analytics, name='admin-inventory-analytics'),
     path('inventory/export/', admin_inventory_export, name='admin-inventory-export'),
 ]
