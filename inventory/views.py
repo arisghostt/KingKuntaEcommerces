@@ -297,9 +297,11 @@ class AdminInventoryViewSet(viewsets.ViewSet):
         new_stock = current_stock + quantity if movement_type == 'in' else current_stock - quantity
         product.current_stock = new_stock
         product.stock = new_stock
+        update_fields = ['current_stock', 'stock', 'updated_at']
         if movement_type == 'in':
             product.last_restocked = timezone.now().date()
-        product.save(update_fields=['current_stock', 'stock', 'last_restocked', 'updated_at'])
+            update_fields.insert(2, 'last_restocked')
+        product.save(update_fields=update_fields)
 
         movement = StockMovement.objects.create(
             product=product,

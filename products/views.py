@@ -39,6 +39,18 @@ class ProductListCreateView(APIView):
         serializer = ProductSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         product = serializer.save()
+        from inventory.models import StockMovement
+
+        initial_stock = int(product.stock or 0)
+        if initial_stock > 0:
+            StockMovement.objects.create(
+                product=product,
+                type='in',
+                quantity=initial_stock,
+                reason='Initial stock',
+                current_stock_after=initial_stock,
+                created_by=request.user if request.user.is_authenticated else None,
+            )
         return Response(ProductSerializer(product, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
