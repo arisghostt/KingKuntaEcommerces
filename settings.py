@@ -357,6 +357,7 @@ SPECTACULAR_SETTINGS = {
 # CORS
 # ─────────────────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = [
+    "https://admin-kingkuntas-y8dv.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
