@@ -40,3 +40,4 @@ sqlparse>=0.4.0
 uritemplate>=4.1.0
 referencing>=0.30.0
 rpds-py>=0.10.0
+gunicorn>=21.2.0
