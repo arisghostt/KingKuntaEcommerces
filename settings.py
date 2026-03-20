@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'storages',          # ← NOUVEAU : django-storages pour R2
 
     # Local apps
+    'corsheaders',
     'core',
     'inventory',
     'products',
@@ -357,7 +358,7 @@ SPECTACULAR_SETTINGS = {
 # CORS
 # ─────────────────────────────────────────────────────────
 CORS_ALLOWED_ORIGINS = [
-    "https://admin-kingkuntas-y8dv.vercel.app",
+    "https://admin-kingkuntas.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
