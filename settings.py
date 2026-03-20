@@ -19,8 +19,20 @@ SECRET_KEY = os.getenv(
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') if os.getenv('ALLOWED_HOSTS') else []
+# ─────────────────────────────────────────────────────────
+# ALLOWED_HOSTS — avec fallback sécurisé
+# ─────────────────────────────────────────────────────────
+_allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '').strip()
+ALLOWED_HOSTS = (
+    [h.strip() for h in _allowed_hosts_env.split(',') if h.strip()]
+    if _allowed_hosts_env
+    else ['localhost', '127.0.0.1']
+)
 
+# Ajoute automatiquement le domaine Render si présent
+_render_hostname = os.getenv('RENDER_EXTERNAL_HOSTNAME', '').strip()
+if _render_hostname and _render_hostname not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_hostname)
 # ─────────────────────────────────────────────────────────
 # APPLICATIONS
 # ─────────────────────────────────────────────────────────
@@ -40,7 +52,6 @@ INSTALLED_APPS = [
     'storages',          # ← NOUVEAU : django-storages pour R2
 
     # Local apps
-    'corsheaders',
     'core',
     'inventory',
     'products',
@@ -355,13 +366,46 @@ SPECTACULAR_SETTINGS = {
 }
 
 # ─────────────────────────────────────────────────────────
-# CORS
+# CORS — configuration complète
 # ─────────────────────────────────────────────────────────
-CORS_ALLOWED_ORIGINS = [
+_cors_env = os.getenv('CORS_ALLOWED_ORIGINS', '').strip()
+_cors_extra = (
+    [o.strip() for o in _cors_env.split(',') if o.strip()]
+    if _cors_env
+    else []
+)
+
+CORS_ALLOWED_ORIGINS = list(set([
     "https://admin-kingkuntas.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
-]
+] + _cors_extra))
+
 CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+CORS_ALLOW_METHODS = [
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+]
+
+# Exposer les headers Authorization dans les réponses
+CORS_EXPOSE_HEADERS = ["Authorization"]
+
